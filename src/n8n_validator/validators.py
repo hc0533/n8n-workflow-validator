@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
+
+from n8n_validator.loader import load_workflow
 
 
 class Severity(Enum):
@@ -125,6 +128,40 @@ def check_webhook_timeout(workflow: dict[str, Any]) -> list[ValidationIssue]:
                 )
 
     return issues
+
+
+def validate_multiple(file_paths: list[str]) -> dict[str, ValidationResult]:
+    """Validate multiple n8n workflow files in batch.
+
+    Args:
+        file_paths: List of paths to workflow JSON files.
+
+    Returns:
+        Dictionary mapping filename to ValidationResult for each file.
+        If a file fails to load (not found, invalid JSON, etc.), its result
+        contains a single ERROR-level issue describing the load failure.
+    """
+    results: dict[str, ValidationResult] = {}
+
+    for file_path in file_paths:
+        path = Path(file_path)
+        load_result = load_workflow(path)
+
+        if load_result.success and load_result.workflow is not None:
+            results[path.name] = validate_workflow(load_result.workflow)
+        else:
+            results[path.name] = ValidationResult(
+                workflow_name=path.name,
+                issues=[
+                    ValidationIssue(
+                        rule="load-error",
+                        message=load_result.error or "Unknown load error",
+                        severity=Severity.ERROR,
+                    )
+                ],
+            )
+
+    return results
 
 
 def validate_workflow(workflow: dict[str, Any]) -> ValidationResult:
